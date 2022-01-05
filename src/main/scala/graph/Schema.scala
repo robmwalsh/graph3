@@ -3,47 +3,54 @@ package graph
 import scala.deriving.Mirror
 
 import java.lang.constant.Constable
+import Key._
+import GraphType._
 
-type #>[Node, Key <: String & Constable] =
-  NodeType[Node, Key]
+sealed trait Key[T, K <: (String & Constable) | Singleton]
+object Key {
+  sealed trait #>[T, K <: String & Constable] extends Key[T, K]
+  sealed trait Obj[T <: Singleton] extends Key[T, T]
+}
 
-trait GraphType
-object GraphType {}
-trait NodeType[Node, Key <: String & Constable] extends GraphType
-trait EdgeType[In <: NodeType[?, ?], Edge, Out <: NodeType[?, ?]]
-    extends GraphType
+sealed trait GraphType
+object GraphType {
+  trait Node[N <: #>[?, ?]] extends GraphType
+  trait Edge[In <: Node[?], E <: Key[?, ?], Out <: Node[?]] extends GraphType
+}
 
 case class Person(name: String, age: Int)
 case object LivesAt
 case object Knows
 case class Address(number: Int, street: String)
 
-trait Schema[N <: NodeType[?, ?], E <: EdgeType[? <: N, ?, ? <: N]] {
-  def addNode[A <: NodeType[?, ?]]: Schema[N | A, E] = new Schema[N | A, E] {}
-  def addEdge[In <: N, Edge, Out <: N]: Schema[N, E | EdgeType[In, Edge, Out]] =
-    new Schema[N, E | EdgeType[In, Edge, Out]] {}
-  def addSchema[N0 <: NodeType[?, ?], E0 <: EdgeType[? <: N0, ?, ? <: N0]](
+trait Schema[N <: Node[?], E <: Edge[? <: N, ?, ? <: N]] {
+  def addNode[N0 <: Node[?]]: Schema[N | N0, E] = new Schema[N | N0, E] {}
+  def addEdge[
+      E0 <: Edge[? <: N, ?, ? <: N]
+  ]: Schema[N, E | E0] =
+    new Schema[N, E | E0] {}
+  def addSchema[N0 <: Node[?], E0 <: Edge[? <: N0, ?, ? <: N0]](
       that: Schema[N0, E0]
   ): Schema[N | N0, E | E0] = new Schema[N | N0, E | E0] {}
 }
 
 object Schema extends App {
   val empty = new Schema[Nothing, Nothing] {}
-  type PersonNode = Person #> "name"
-  type AddressNode = Address #> "number"
-  type LivesAtEdge = EdgeType[PersonNode, LivesAt.type, AddressNode]
-  type KnowsEdge = EdgeType[PersonNode, Knows.type, PersonNode]
+  type PersonNode = Node[Person #> "name"]
+  type AddressNode = Node[Address #> "number"]
+  type LivesAtEdge = Edge[PersonNode, Obj["LivesAt"], AddressNode]
+  type KnowsEdge = Edge[PersonNode, Obj[Knows.type], PersonNode]
   val test = new Schema[
     PersonNode | AddressNode,
     LivesAtEdge | KnowsEdge
   ] {}
 
   val social =
-    empty.addNode[Person #> "name"].addEdge[PersonNode, Knows.type, PersonNode]
+    empty.addNode[PersonNode].addEdge[KnowsEdge]
   val delivery = empty
-    .addNode[Person #> "name"]
+    .addNode[PersonNode]
     .addNode[AddressNode]
-    .addEdge[PersonNode, LivesAt.type, AddressNode]
+    .addEdge[LivesAtEdge]
   val socialDelivery = social.addSchema(delivery)
 
 }
