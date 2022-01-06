@@ -6,16 +6,21 @@ import java.lang.constant.Constable
 import Key._
 import GraphType._
 
-sealed trait Key[T, K <: (String & Constable) | Singleton]
+sealed trait Key[T, K] {
+  type Key
+}
 object Key {
   sealed trait #>[T, K <: String & Constable] extends Key[T, K]
-  sealed trait Obj[T <: Singleton] extends Key[T, T]
+  // key is tuple of node keys
+  sealed trait Self[T <: Singleton] extends Key[T, T]
 }
 
-sealed trait GraphType
+sealed trait GraphType {
+
+}
 object GraphType {
-  trait Node[N <: #>[?, ?]] extends GraphType
-  trait Edge[In <: Node[?], E <: Key[?, ?], Out <: Node[?]] extends GraphType
+  trait Node[K <: #>[?, ?]] extends GraphType {
+  trait Edge[From <: Node[?], K <: Key[?, ?], To <: Node[?]] extends GraphType
 }
 
 case class Person(name: String, age: Int)
@@ -38,8 +43,8 @@ object Schema extends App {
   val empty = new Schema[Nothing, Nothing] {}
   type PersonNode = Node[Person #> "name"]
   type AddressNode = Node[Address #> "number"]
-  type LivesAtEdge = Edge[PersonNode, Obj["LivesAt"], AddressNode]
-  type KnowsEdge = Edge[PersonNode, Obj[Knows.type], PersonNode]
+  type LivesAtEdge = Edge[PersonNode, Label["LivesAt"], AddressNode]
+  type KnowsEdge = Edge[PersonNode, Label[Knows.type], PersonNode]
   val test = new Schema[
     PersonNode | AddressNode,
     LivesAtEdge | KnowsEdge
