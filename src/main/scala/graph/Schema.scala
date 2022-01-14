@@ -3,9 +3,12 @@ package graph
 import graph.Schema.Key.Self
 import graph.Schema.Node.keyFnImpl
 import graph.Schema.{Edge, Node}
-
+import scala.compiletime.*
+import scala.quoted.*
+import scala.deriving.*
 import scala.deriving.Mirror
 import java.lang.constant.Constable
+import scala.Tuple.Union
 import scala.quoted.{Expr, Quotes, Type}
 
 case class Person(name: String, age: Int)
@@ -26,36 +29,65 @@ trait Schema[N <: Node[?], E <: Edge[? <: N, ?, ? <: N]] {
 
 object Schema {
   import Key._
-  sealed trait GraphObject {
+  sealed trait GraphObject[K <: Key.Aux[?, ?, ?]] {
+    val key: K
 
-    inline def keyFn[T, K](inline key: Key[T, K]): T => Any
+    // transparent inline def keyFn[T, K](inline key: Key[T, K]): T => Any
   }
-  trait Node[K <: Key[?, ?]] extends GraphObject {
-    override transparent inline def keyFn[T, K](
-        inline key: Key[T, K]
-    ): T => Any = ${
-      Node.keyFnImpl[T, K]('{ key })
-    }
-
-  }
+  sealed trait Node[K <: Key.Aux[?, ?, ?]] extends GraphObject[K] {}
   object Node {
-
-    def keyFnImpl[T: Type, K: Type](key: Expr[Key[T, K]])(using
+    transparent inline def apply[K <: Key[?, ?]]: Node[Key.Aux[Any, Any, Any]] =
+      ${
+        applyFnImpl[K]
+      }
+    private def applyFnImpl[K <: Key[?, ?]: Type](using
         Quotes
-    ): Expr[T => Any] = '{ _.toString }
+    ): Expr[Node[Key.Aux[Any, Any, Any]]] = {
+      import quotes.reflect._
+      def loop[L: Type, T: Type, K: Type]: TypeRepr =
+        Type.of[L] match
+          case '[lHead *: lTail] =>
+            Type.of[T] match
+              case '[tHead *: tTail] => {
+                if (Type.of[lHead] == Type.of[K]) TypeRepr.of[tHead]
+                else loop[lTail, tTail, T]
+              }
+
+      Type.of[K] match {
+        case '[Key[t, k]] => {
+          Expr.summon[Mirror.ProductOf[k]].get match {
+            case '{
+                  $m: Mirror.ProductOf[k] {
+                    type MirroredElemLabels = labels;
+                    type MirroredElemTypes = types
+                  }
+                } =>
+              loop[labels, types, k]
+
+            case _ =>
+              throw new IllegalStateException(
+                "labels and types must be the same length"
+              )
+
+          }
+        }
+        case _ => throw new Exception("uh oh")
+      }
+    }
   }
-  trait Edge[From <: Node[?], K <: Key[?, ?], To <: Node[?]] extends GraphObject
+  trait Edge[From <: Node[?], K <: Key.Aux[?, ?, ?], To <: Node[?]]
+      extends GraphObject[K]
+
   sealed trait Key[T, K] {
     type Out
+    val keyFn: T => Out
   }
+
   object Key {
+    type Aux[T, K <: String & Constable, O] = Key[T, K] { type Out = O }
+
     sealed trait #>[T, K <: String & Constable] extends Key[T, K]
-    object #> {
-      type Aux[T, K <: String & Constable, O] = #>[T, K] { type Out = O }
-    }
-    sealed trait Self[T <: Singleton] extends Key[T, T] {
-      override type Out = T
-    }
+    sealed trait Self[T <: Singleton] extends Key[T, T]
   }
 
 }
